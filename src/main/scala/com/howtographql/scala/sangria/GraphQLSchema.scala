@@ -6,6 +6,8 @@ import sangria.ast.StringValue
 import sangria.execution.deferred._
 import sangria.macros.derive._
 import sangria.schema.{Field, ListType, ObjectType, _}
+import sangria.marshalling.sprayJson._
+import spray.json.DefaultJsonProtocol._
 
 object GraphQLSchema {
 
@@ -37,6 +39,18 @@ object GraphQLSchema {
   )
 
   // Object Types
+  lazy val UserType: ObjectType[Unit, User] =
+    deriveObjectType[Unit, User](
+      Interfaces(IdentifiableType),
+      ReplaceField("createdAt", Field("createdAt", GraphQLDateTime, resolve = _.value.createdAt)),
+      AddFields(
+        Field("links", ListType(LinkType), resolve = c => linksFetcher.deferRelSeq(linkByUserRel, c.value.id)),
+        Field("votes", ListType(VoteType), resolve = c => votesFetcher.deferRelSeq(voteByUserRel, c.value.id))
+      )
+    )
+
+  implicit val userHasId = HasId[User, Int](_.id)
+
   lazy val LinkType: ObjectType[Unit, Link] =
     deriveObjectType[Unit, Link](
       Interfaces(IdentifiableType),
@@ -51,18 +65,6 @@ object GraphQLSchema {
 
   implicit val linkHasId = HasId[Link, Int](_.id)
 
-  lazy val UserType: ObjectType[Unit, User] =
-    deriveObjectType[Unit, User](
-      Interfaces(IdentifiableType),
-      ReplaceField("createdAt", Field("createdAt", GraphQLDateTime, resolve = _.value.createdAt)),
-      AddFields(
-        Field("links", ListType(LinkType), resolve = c => linksFetcher.deferRelSeq(linkByUserRel, c.value.id)),
-        Field("votes", ListType(VoteType), resolve = c => votesFetcher.deferRelSeq(voteByUserRel, c.value.id))
-      )
-    )
-
-  implicit val userHasId = HasId[User, Int](_.id)
-
   lazy val VoteType: ObjectType[Unit, Vote] =
     deriveObjectType[Unit, Vote](
       Interfaces(IdentifiableType),
@@ -75,6 +77,15 @@ object GraphQLSchema {
     )
 
   implicit val voteHasId = HasId[Vote, Int](_.id)
+
+  implicit val authProviderEmailFormat = jsonFormat2(AuthProviderEmail)
+  implicit val authProviderSignupDataFormat = jsonFormat1(AuthProviderSignupData)
+
+  implicit val AuthProviderEmailInputType: InputObjectType[AuthProviderEmail] = deriveInputObjectType[AuthProviderEmail](
+    InputObjectTypeName("AUTH_PROVIDER_EMAIL")
+  )
+
+  lazy val AuthProviderSignupDataInputType: InputObjectType[AuthProviderSignupData] = deriveInputObjectType[AuthProviderSignupData]()
 
   // Fetchers
   val linksFetcher =
@@ -130,6 +141,36 @@ object GraphQLSchema {
     )
   )
 
-  val SchemaDefinition = Schema(QueryType)
+  // Mutations
+  val NameArg = Argument("name", StringType)
+  val AuthProviderArg = Argument("authProvider", AuthProviderSignupDataInputType)
+  val UrlArg = Argument("url", StringType)
+  val DescriptionArg = Argument("description", StringType)
+  val PostedByArg = Argument("postedBy", IntType)
+  val LinkIdArg = Argument("linkId", IntType)
+  val UserIdArg = Argument("userId", IntType)
+
+  val Mutation = ObjectType(
+    "Mutation",
+    fields[MyContext, Unit](
+      Field("createUser",
+        UserType,
+        arguments = List(NameArg, AuthProviderArg),
+        resolve = c => c.ctx.dao.createUser(c.arg(NameArg), c.arg(AuthProviderArg))
+      ),
+      Field("createLink",
+        LinkType,
+        arguments = List(UrlArg, DescriptionArg, PostedByArg),
+        resolve = c => c.ctx.dao.createLink(c.arg(UrlArg), c.arg(DescriptionArg), c.arg(PostedByArg))
+      ),
+      Field("createVote",
+        VoteType,
+        arguments = List(LinkIdArg, UserIdArg),
+        resolve = c => c.ctx.dao.createVote(c.arg(LinkIdArg), c.arg(UserIdArg))
+      )
+    )
+  )
+
+  val SchemaDefinition = Schema(QueryType, Some(Mutation))
 
 }
