@@ -20,6 +20,10 @@ package object models {
 
   case class Vote(id: Int, createdAt: DateTime, userId: Int, linkId: Int) extends Identifiable
 
+  case class AuthProviderEmail(email: String, password: String)
+
+  case class AuthProviderSignupData(email: AuthProviderEmail)
+
   case object DateTimeCoerceViolation extends Violation {
     override def errorMessage: String = "Error during parsing DateTime"
   }
